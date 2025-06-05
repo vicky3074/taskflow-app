@@ -94,16 +94,16 @@ jobs:
     - name: Checkout code
       uses: actions/checkout@v4
       
+    - name: Setup SSH
+      run: |
+        mkdir -p ~/.ssh
+        echo "${{ secrets.SSH_PRIVATE_KEY }}" > ~/.ssh/id_rsa
+        chmod 600 ~/.ssh/id_rsa
+        ssh-keyscan -H ${{ secrets.DROPLET_IP }} >> ~/.ssh/known_hosts
+        
     - name: Deploy to DigitalOcean
-      uses: appleboy/ssh-action@v1.0.3
-      with:
-        host: ${{ secrets.DROPLET_IP }}
-        username: ${{ secrets.DROPLET_USER }}
-        key: ${{ secrets.SSH_PRIVATE_KEY }}
-        port: 22
-        timeout: 30s
-        command_timeout: 10m
-        script: |
+      run: |
+        ssh -i ~/.ssh/id_rsa ${{ secrets.DROPLET_USER }}@${{ secrets.DROPLET_IP }} << 'EOF'
           echo "🚀 Starting deployment..."
           
           # Navigate to app directory
@@ -151,6 +151,7 @@ jobs:
           docker compose ps
           
           echo "🌍 Application is live at: http://${{ secrets.DROPLET_IP }}"
+        EOF
 
     - name: Notify deployment status
       if: always()
@@ -169,13 +170,16 @@ jobs:
     if: github.event_name == 'workflow_dispatch'
     
     steps:
+    - name: Setup SSH for Rollback  
+      run: |
+        mkdir -p ~/.ssh
+        echo "${{ secrets.SSH_PRIVATE_KEY }}" > ~/.ssh/id_rsa
+        chmod 600 ~/.ssh/id_rsa
+        ssh-keyscan -H ${{ secrets.DROPLET_IP }} >> ~/.ssh/known_hosts
+        
     - name: Rollback on DigitalOcean
-      uses: appleboy/ssh-action@v1.0.0
-      with:
-        host: ${{ secrets.DROPLET_IP }}
-        username: ${{ secrets.DROPLET_USER }}
-        key: ${{ secrets.SSH_PRIVATE_KEY }}
-        script: |
+      run: |
+        ssh -i ~/.ssh/id_rsa ${{ secrets.DROPLET_USER }}@${{ secrets.DROPLET_IP }} << 'EOF'
           echo "🔄 Rolling back deployment..."
           cd /var/www/taskflow-app
           
@@ -191,3 +195,4 @@ jobs:
           docker compose up -d --build
           
           echo "✅ Rollback complete!"
+        EOF
