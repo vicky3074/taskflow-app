@@ -155,7 +155,7 @@ app.get('/', (req, res) => {
         <div class="container">
             <div class="header">
                 <h1>🚀 TaskFlow</h1>
-                <p>Modern Task Management with Docker & CI/CD</p>
+                <p>Modern Task Management with Docker & CI/CD - Now with GitHub Integration!</p>
                 <div>
                     <span class="badge">Docker</span>
                     <span class="badge">Node.js</span>
