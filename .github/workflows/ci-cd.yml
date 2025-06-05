@@ -125,32 +125,3 @@ jobs:
           echo "❌ Deployment failed!"
         fi
 
-  # Rollback (manual trigger)
-  rollback:
-    name: Rollback Deployment
-    runs-on: ubuntu-latest
-    if: github.event_name == 'workflow_dispatch'
-    
-    steps:
-    - name: Rollback on DigitalOcean
-      uses: appleboy/ssh-action@v1.0.3
-      with:
-        host: ${{ secrets.DROPLET_IP }}
-        username: ${{ secrets.DROPLET_USER }}
-        key: ${{ secrets.SSH_PRIVATE_KEY }}
-        script: |
-          echo "🔄 Rolling back deployment..."
-          cd /var/www/taskflow-app
-          
-          # Get previous commit
-          PREVIOUS_COMMIT=$(git rev-parse HEAD~1)
-          echo "📍 Rolling back to commit: ${PREVIOUS_COMMIT:0:8}"
-          
-          # Checkout previous commit
-          git checkout $PREVIOUS_COMMIT
-          
-          # Rebuild and restart
-          docker compose down
-          docker compose up -d --build
-          
-          echo "✅ Rollback complete!"
