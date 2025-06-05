@@ -59,7 +59,7 @@ app.get('/', (req, res) => {
             * { margin: 0; padding: 0; box-sizing: border-box; }
             body { 
                 font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
-                background: linear-gradient(135deg, #2c2c2c 0%, #1a1a1a 100%);
+                background: linear-gradient(135deg, #ff6b9d 0%, #ff8fab 100%);
                 min-height: 100vh;
                 padding: 20px;
             }
@@ -74,12 +74,12 @@ app.get('/', (req, res) => {
             .header { 
                 text-align: center; 
                 margin-bottom: 40px;
-                color: #333;
+                color: #d63384;
             }
             .header h1 { 
                 font-size: 3rem; 
                 margin-bottom: 10px;
-                color: #333;
+                color: #d63384;
             }
             .header p { 
                 font-size: 1.2rem; 
@@ -111,7 +111,7 @@ app.get('/', (req, res) => {
                 margin-bottom: 30px;
             }
             .api-section h2 { 
-                color: #333;
+                color: #d63384;
                 margin-bottom: 20px;
                 font-size: 1.8rem;
             }
@@ -123,10 +123,10 @@ app.get('/', (req, res) => {
                 background: white;
                 padding: 20px;
                 border-radius: 10px;
-                border-left: 5px solid #333;
+                border-left: 5px solid #d63384;
                 box-shadow: 0 5px 15px rgba(0,0,0,0.05);
             }
-            .endpoint strong { color: #333; }
+            .endpoint strong { color: #d63384; }
             .endpoint code { 
                 background: #f1f3f4;
                 padding: 2px 6px;
@@ -142,7 +142,7 @@ app.get('/', (req, res) => {
             }
             .badge { 
                 display: inline-block;
-                background: #333;
+                background: #d63384;
                 color: white;
                 padding: 5px 10px;
                 border-radius: 20px;
