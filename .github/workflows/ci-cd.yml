@@ -94,67 +94,13 @@ jobs:
     - name: Checkout code
       uses: actions/checkout@v4
       
-    - name: Setup SSH
+    - name: Deploy to DigitalOcean via webhook
       run: |
-        mkdir -p ~/.ssh
-        printf '%s\n' "${{ secrets.SSH_PRIVATE_KEY }}" > ~/.ssh/deploy_key
-        chmod 600 ~/.ssh/deploy_key
-        ssh-keyscan -H ${{ secrets.DROPLET_IP }} >> ~/.ssh/known_hosts
-        # Debug: check key format
-        head -1 ~/.ssh/deploy_key
-        tail -1 ~/.ssh/deploy_key
-        
-    - name: Deploy to DigitalOcean
-      run: |
-        ssh -i ~/.ssh/deploy_key ${{ secrets.DROPLET_USER }}@${{ secrets.DROPLET_IP }} << 'EOF'
-          echo "🚀 Starting deployment..."
-          
-          # Navigate to app directory
-          cd /var/www/taskflow-app || { echo "App directory not found"; exit 1; }
-          
-          # Pull latest changes
-          echo "📥 Pulling latest code..."
-          git pull origin main
-          
-          # Stop existing containers
-          echo "🛑 Stopping existing containers..."
-          docker compose down
-          
-          # Remove old images to save space
-          echo "🧹 Cleaning up old images..."
-          docker image prune -f
-          
-          # Build and start new containers
-          echo "🐳 Building and starting containers..."
-          docker compose up -d --build
-          
-          # Wait for services to be ready
-          echo "⏳ Waiting for services to start..."
-          sleep 30
-          
-          # Health check
-          echo "🏥 Performing health check..."
-          for i in {1..5}; do
-            if curl -f http://localhost/health > /dev/null 2>&1; then
-              echo "✅ Health check passed!"
-              break
-            else
-              echo "❌ Health check failed, attempt $i/5"
-              if [ $i -eq 5 ]; then
-                echo "🚨 Deployment failed - health check never passed"
-                docker compose logs
-                exit 1
-              fi
-              sleep 10
-            fi
-          done
-          
-          # Show final status
-          echo "📊 Deployment complete! Container status:"
-          docker compose ps
-          
-          echo "🌍 Application is live at: http://${{ secrets.DROPLET_IP }}"
-        EOF
+        curl -X POST \
+          -H "Content-Type: application/json" \
+          -H "Authorization: Bearer ${{ secrets.DEPLOY_TOKEN }}" \
+          -d '{"ref": "main", "sha": "${{ github.sha }}", "repository": "${{ github.repository }}"}' \
+          http://${{ secrets.DROPLET_IP }}:3001/deploy
 
     - name: Notify deployment status
       if: always()
