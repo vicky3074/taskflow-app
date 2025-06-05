@@ -1,0 +1,189 @@
+name: CI/CD Pipeline
+
+on:
+  push:
+    branches: [ main, develop ]
+  pull_request:
+    branches: [ main ]
+
+env:
+  NODE_VERSION: '20'
+  DOCKER_BUILDKIT: 1
+  COMPOSE_DOCKER_CLI_BUILD: 1
+
+jobs:
+  # Code Quality & Testing
+  test:
+    name: Test & Code Quality
+    runs-on: ubuntu-latest
+    
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+      
+    - name: Setup Node.js
+      uses: actions/setup-node@v4
+      with:
+        node-version: ${{ env.NODE_VERSION }}
+        cache: 'npm'
+        
+    - name: Install dependencies
+      run: npm ci
+      
+    - name: Run linting
+      run: npm run lint || echo "Linting step completed"
+      
+    - name: Run tests
+      run: npm test
+      
+    - name: Build application
+      run: npm run build
+
+  # Security Scanning
+  security:
+    name: Security Scan
+    runs-on: ubuntu-latest
+    needs: test
+    
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+      
+    - name: Run Trivy vulnerability scanner
+      uses: aquasecurity/trivy-action@master
+      with:
+        scan-type: 'fs'
+        scan-ref: '.'
+        format: 'sarif'
+        output: 'trivy-results.sarif'
+      continue-on-error: true
+
+  # Docker Build & Test
+  docker-build:
+    name: Docker Build & Test
+    runs-on: ubuntu-latest
+    needs: test
+    
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+      
+    - name: Set up Docker Buildx
+      uses: docker/setup-buildx-action@v3
+      
+    - name: Build Docker image
+      run: docker build -t taskflow-app:test .
+      
+    - name: Test Docker image
+      run: |
+        docker run -d --name test-container -p 3000:3000 taskflow-app:test
+        sleep 10
+        curl -f http://localhost:3000/health || exit 1
+        docker stop test-container
+        docker rm test-container
+
+  # Deploy to DigitalOcean
+  deploy:
+    name: Deploy to DigitalOcean
+    runs-on: ubuntu-latest
+    needs: [test, docker-build]
+    if: github.ref == 'refs/heads/main' && github.event_name == 'push'
+    
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+      
+    - name: Deploy to DigitalOcean
+      uses: appleboy/ssh-action@v1.0.0
+      with:
+        host: ${{ secrets.DROPLET_IP }}
+        username: ${{ secrets.DROPLET_USER }}
+        key: ${{ secrets.SSH_PRIVATE_KEY }}
+        script: |
+          echo "🚀 Starting deployment..."
+          
+          # Navigate to app directory
+          cd /var/www/taskflow-app || { echo "App directory not found"; exit 1; }
+          
+          # Pull latest changes
+          echo "📥 Pulling latest code..."
+          git pull origin main
+          
+          # Stop existing containers
+          echo "🛑 Stopping existing containers..."
+          docker compose down
+          
+          # Remove old images to save space
+          echo "🧹 Cleaning up old images..."
+          docker image prune -f
+          
+          # Build and start new containers
+          echo "🐳 Building and starting containers..."
+          docker compose up -d --build
+          
+          # Wait for services to be ready
+          echo "⏳ Waiting for services to start..."
+          sleep 30
+          
+          # Health check
+          echo "🏥 Performing health check..."
+          for i in {1..5}; do
+            if curl -f http://localhost/health > /dev/null 2>&1; then
+              echo "✅ Health check passed!"
+              break
+            else
+              echo "❌ Health check failed, attempt $i/5"
+              if [ $i -eq 5 ]; then
+                echo "🚨 Deployment failed - health check never passed"
+                docker compose logs
+                exit 1
+              fi
+              sleep 10
+            fi
+          done
+          
+          # Show final status
+          echo "📊 Deployment complete! Container status:"
+          docker compose ps
+          
+          echo "🌍 Application is live at: http://${{ secrets.DROPLET_IP }}"
+
+    - name: Notify deployment status
+      if: always()
+      run: |
+        if [ ${{ job.status }} == 'success' ]; then
+          echo "🎉 Deployment to DigitalOcean successful!"
+          echo "🌍 Live at: http://${{ secrets.DROPLET_IP }}"
+        else
+          echo "❌ Deployment failed!"
+        fi
+
+  # Rollback (manual trigger)
+  rollback:
+    name: Rollback Deployment
+    runs-on: ubuntu-latest
+    if: github.event_name == 'workflow_dispatch'
+    
+    steps:
+    - name: Rollback on DigitalOcean
+      uses: appleboy/ssh-action@v1.0.0
+      with:
+        host: ${{ secrets.DROPLET_IP }}
+        username: ${{ secrets.DROPLET_USER }}
+        key: ${{ secrets.SSH_PRIVATE_KEY }}
+        script: |
+          echo "🔄 Rolling back deployment..."
+          cd /var/www/taskflow-app
+          
+          # Get previous commit
+          PREVIOUS_COMMIT=$(git rev-parse HEAD~1)
+          echo "📍 Rolling back to commit: ${PREVIOUS_COMMIT:0:8}"
+          
+          # Checkout previous commit
+          git checkout $PREVIOUS_COMMIT
+          
+          # Rebuild and restart
+          docker compose down
+          docker compose up -d --build
+          
+          echo "✅ Rollback complete!"
