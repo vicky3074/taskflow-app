@@ -94,16 +94,16 @@ jobs:
     - name: Checkout code
       uses: actions/checkout@v4
       
+    - name: Setup SSH Key
+      run: |
+        mkdir -p ~/.ssh
+        echo "${{ secrets.SSH_PRIVATE_KEY_BASE64 }}" | base64 -d > ~/.ssh/deploy_key
+        chmod 600 ~/.ssh/deploy_key
+        ssh-keyscan -H ${{ secrets.DROPLET_IP }} >> ~/.ssh/known_hosts
+        
     - name: Deploy to DigitalOcean
-      uses: appleboy/ssh-action@v1.0.3
-      with:
-        host: ${{ secrets.DROPLET_IP }}
-        username: ${{ secrets.DROPLET_USER }}
-        key: ${{ secrets.SSH_PRIVATE_KEY }}
-        port: 22
-        timeout: 30s
-        command_timeout: 10m
-        script: |
+      run: |
+        ssh -i ~/.ssh/deploy_key -o StrictHostKeyChecking=no ${{ secrets.DROPLET_USER }}@${{ secrets.DROPLET_IP }} << 'EOF'
           echo "🚀 Starting deployment..."
           
           # Navigate to app directory
@@ -151,6 +151,7 @@ jobs:
           docker compose ps
           
           echo "🌍 Application is live at: http://${{ secrets.DROPLET_IP }}"
+        EOF
 
     - name: Notify deployment status
       if: always()
