@@ -59,7 +59,7 @@ app.get('/', (req, res) => {
             * { margin: 0; padding: 0; box-sizing: border-box; }
             body { 
                 font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
-                background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+                background: linear-gradient(135deg, #2c2c2c 0%, #1a1a1a 100%);
                 min-height: 100vh;
                 padding: 20px;
             }
@@ -79,7 +79,7 @@ app.get('/', (req, res) => {
             .header h1 { 
                 font-size: 3rem; 
                 margin-bottom: 10px;
-                color: #667eea;
+                color: #333;
             }
             .header p { 
                 font-size: 1.2rem; 
@@ -123,10 +123,10 @@ app.get('/', (req, res) => {
                 background: white;
                 padding: 20px;
                 border-radius: 10px;
-                border-left: 5px solid #667eea;
+                border-left: 5px solid #333;
                 box-shadow: 0 5px 15px rgba(0,0,0,0.05);
             }
-            .endpoint strong { color: #667eea; }
+            .endpoint strong { color: #333; }
             .endpoint code { 
                 background: #f1f3f4;
                 padding: 2px 6px;
@@ -142,7 +142,7 @@ app.get('/', (req, res) => {
             }
             .badge { 
                 display: inline-block;
-                background: #667eea;
+                background: #333;
                 color: white;
                 padding: 5px 10px;
                 border-radius: 20px;
