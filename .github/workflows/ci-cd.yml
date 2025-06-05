@@ -100,6 +100,7 @@ jobs:
         host: ${{ secrets.DROPLET_IP }}
         username: ${{ secrets.DROPLET_USER }}
         key: ${{ secrets.SSH_PRIVATE_KEY }}
+        port: 22
         script: |
           echo "🚀 Starting deployment..."
           
