@@ -101,29 +101,37 @@ jobs:
       run: |
         echo "🔐 Authenticating with HCP Vault Secrets..."
         
-        # Get access token using service principal (HCP Vault Dynamic Secrets)
-        TOKEN_RESPONSE=$(curl -s -X POST "${{ secrets.VAULT_ADDR }}/v1/auth/jwt/login" \
-          -H "Content-Type: application/json" \
-          -d "{\"client_id\": \"${{ secrets.VAULT_CLIENT_ID }}\", \"client_secret\": \"${{ secrets.VAULT_CLIENT_SECRET }}\"}")
+        # Get access token using service principal (HCP Vault Secrets API)
+        TOKEN_RESPONSE=$(curl -s -X POST "https://auth.idp.hashicorp.com/oauth2/token" \
+          -H "Content-Type: application/x-www-form-urlencoded" \
+          -d "grant_type=client_credentials&client_id=${{ secrets.VAULT_CLIENT_ID }}&client_secret=${{ secrets.VAULT_CLIENT_SECRET }}&audience=https://api.hashicorp.cloud&scope=https://api.hashicorp.cloud")
         
-        ACCESS_TOKEN=$(echo "$TOKEN_RESPONSE" | jq -r '.auth.client_token // empty')
+        ACCESS_TOKEN=$(echo "$TOKEN_RESPONSE" | jq -r '.access_token // empty')
         
         if [ -z "$ACCESS_TOKEN" ] || [ "$ACCESS_TOKEN" = "null" ]; then
-          echo "❌ Failed to get access token from HCP Vault"
+          echo "❌ Failed to get access token from HCP Vault Secrets"
           echo "Response: $TOKEN_RESPONSE"
           exit 1
         fi
         
-        echo "✅ Successfully authenticated with HCP Vault"
+        echo "✅ Successfully authenticated with HCP Vault Secrets"
         
-        # Retrieve SSH key using tested Python JSON parsing solution
+        # Retrieve SSH key using correct HCP Vault Secrets API endpoint
         echo "🔑 Retrieving SSH key from HCP Vault Secrets..."
         SSH_RESPONSE=$(curl -s -H "Authorization: Bearer $ACCESS_TOKEN" \
-          "${{ secrets.VAULT_ADDR }}/secrets/ssh_key:open")
+          "https://api.cloud.hashicorp.com/secrets/2023-11-28/organizations/b9aa686e-3fc3-4436-8cae-1186bfa28a7f/projects/6edfe380-4a09-4778-861b-76572e60f123/apps/taskflow-prod/secrets/ssh_key:open")
         
         echo "🐍 Using Python for robust JSON parsing..."
         echo "$SSH_RESPONSE" > /tmp/ssh_response.json
-        SSH_KEY=$(python3 -c "import json; data=json.load(open('/tmp/ssh_response.json')); print(data['secret']['static_version']['value'])")
+        SSH_KEY=$(python3 -c "
+import json
+with open('/tmp/ssh_response.json') as f:
+    data = json.load(f)
+ssh_key = data['secret']['static_version']['value']
+# Convert \\n escape sequences to actual newlines
+ssh_key = ssh_key.replace('\\\\n', '\n')
+print(ssh_key)
+        ")
         
         if [ $? -eq 0 ] && [ -n "$SSH_KEY" ]; then
           echo "✅ SSH key extracted successfully using Python"
@@ -136,9 +144,9 @@ jobs:
         fi
         
         if [ $? -eq 0 ]; then
-          echo "✅ Successfully retrieved and parsed SSH key from HCP Vault"
+          echo "✅ Successfully retrieved and parsed SSH key from HCP Vault Secrets"
         else
-          echo "❌ Failed to retrieve SSH key from HCP Vault"
+          echo "❌ Failed to retrieve SSH key from HCP Vault Secrets"
           exit 1
         fi
 
