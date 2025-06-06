@@ -101,50 +101,46 @@ jobs:
       run: |
         echo "🔐 Authenticating with HCP Vault Secrets..."
         
-        # Get access token using service principal
-        ACCESS_TOKEN=$(curl -s -X POST "https://auth.idp.hashicorp.com/oauth2/token" \
-          -H "Content-Type: application/x-www-form-urlencoded" \
-          -d "grant_type=client_credentials&client_id=${{ secrets.VAULT_CLIENT_ID }}&client_secret=${{ secrets.VAULT_CLIENT_SECRET }}&audience=https://api.hashicorp.cloud&scope=https://api.hashicorp.cloud" \
-          | jq -r '.access_token')
-        
-        if [ "$ACCESS_TOKEN" = "null" ] || [ -z "$ACCESS_TOKEN" ]; then
-          echo "❌ Failed to get access token from HCP"
-          exit 1
-        fi
-        
-        echo "✅ Successfully authenticated with HCP"
-        
-        # Retrieve SSH key using correct HCP Vault Secrets API format
-        echo "🔑 Retrieving SSH key from HCP Vault Secrets..."
-        SSH_RESPONSE=$(curl -s -X POST \
-          -H "Authorization: Bearer $ACCESS_TOKEN" \
+        # Get access token using service principal (HCP Vault Dynamic Secrets)
+        TOKEN_RESPONSE=$(curl -s -X POST "${{ secrets.VAULT_ADDR }}/v1/auth/jwt/login" \
           -H "Content-Type: application/json" \
-          -d '{"names": ["ssh_key"]}' \
-          "https://api.cloud.hashicorp.com/secrets/2023-11-28/organizations/b9aa686e-3fc3-4436-8cae-1186bfa28a7f/projects/6edfe380-4a09-4778-861b-76572e60f123/apps/taskflow-prod/secrets:open")
-        echo "SSH key response: $SSH_RESPONSE"
+          -d "{\"client_id\": \"${{ secrets.VAULT_CLIENT_ID }}\", \"client_secret\": \"${{ secrets.VAULT_CLIENT_SECRET }}\"}")
         
-        SSH_KEY=$(echo "$SSH_RESPONSE" | jq -r '.static_version.value // empty')
-        echo "Extracted SSH key: ${SSH_KEY:0:50}..." # Only show first 50 chars
+        ACCESS_TOKEN=$(echo "$TOKEN_RESPONSE" | jq -r '.auth.client_token // empty')
         
-        if [ -z "$SSH_KEY" ] || [ "$SSH_KEY" = "null" ]; then
-          echo "❌ Failed to retrieve SSH key from HCP Vault Secrets with any name"
-          echo "📋 Check available secrets above for correct name"
+        if [ -z "$ACCESS_TOKEN" ] || [ "$ACCESS_TOKEN" = "null" ]; then
+          echo "❌ Failed to get access token from HCP Vault"
+          echo "Response: $TOKEN_RESPONSE"
           exit 1
         fi
         
-        echo "✅ Successfully retrieved SSH key from HCP Vault Secrets"
+        echo "✅ Successfully authenticated with HCP Vault"
         
-        # Fix SSH key formatting (handle escape sequences from Vault)
-        echo "🔧 Reformatting SSH key with proper line breaks..."
-        # Convert \r\n escape sequences to actual newlines and remove extra spaces
-        FORMATTED_SSH_KEY=$(echo "$SSH_KEY" | sed 's/\\r\\n/\n/g' | sed 's/\\//g' | sed 's/^[ \t]*//' | sed '/^$/d')
+        # Retrieve SSH key using tested Python JSON parsing solution
+        echo "🔑 Retrieving SSH key from HCP Vault Secrets..."
+        SSH_RESPONSE=$(curl -s -H "Authorization: Bearer $ACCESS_TOKEN" \
+          "${{ secrets.VAULT_ADDR }}/secrets/ssh_key:open")
         
-        echo "SSH key after formatting: ${FORMATTED_SSH_KEY:0:100}..."
+        echo "🐍 Using Python for robust JSON parsing..."
+        echo "$SSH_RESPONSE" > /tmp/ssh_response.json
+        SSH_KEY=$(python3 -c "import json; data=json.load(open('/tmp/ssh_response.json')); print(data['secret']['static_version']['value'])")
         
-        # Export properly formatted SSH key for next step
-        echo "SSH_PRIVATE_KEY<<EOF" >> $GITHUB_ENV
-        echo -e "$FORMATTED_SSH_KEY" >> $GITHUB_ENV
-        echo "EOF" >> $GITHUB_ENV
+        if [ $? -eq 0 ] && [ -n "$SSH_KEY" ]; then
+          echo "✅ SSH key extracted successfully using Python"
+          echo "SSH_PRIVATE_KEY<<EOF" >> $GITHUB_ENV
+          echo "$SSH_KEY" >> $GITHUB_ENV
+          echo "EOF" >> $GITHUB_ENV
+        else
+          echo "❌ Failed to extract SSH key using Python"
+          exit 1
+        fi
+        
+        if [ $? -eq 0 ]; then
+          echo "✅ Successfully retrieved and parsed SSH key from HCP Vault"
+        else
+          echo "❌ Failed to retrieve SSH key from HCP Vault"
+          exit 1
+        fi
 
     # PRIMARY METHOD: SSH Deployment (Vault-Powered)
     - name: 🔑 Primary - SSH Deployment (Vault-Powered)
