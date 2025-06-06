@@ -103,7 +103,7 @@ jobs:
         
         TOKEN_RESPONSE=$(curl -s -X POST "https://auth.idp.hashicorp.com/oauth2/token" \
           -H "Content-Type: application/x-www-form-urlencoded" \
-          -d "grant_type=client_credentials&client_id=${{ secrets.VAULT_CLIENT_ID }}&client_secret=${{ secrets.VAULT_CLIENT_SECRET }}&audience=https://api.hashicorp.cloud&scope=https://api.hashicorp.cloud")
+          -d "grant_type=client_credentials&client_id=${{ secrets.TASKFLOW_PROD_VAULT_CLIENT_ID }}&client_secret=${{ secrets.TASKFLOW_PROD_VAULT_CLIENT_SECRET }}&audience=https://api.hashicorp.cloud&scope=https://api.hashicorp.cloud")
         
         ACCESS_TOKEN=$(echo "$TOKEN_RESPONSE" | jq -r '.access_token // empty')
         
@@ -200,12 +200,12 @@ jobs:
         chmod 600 /tmp/deploy_key
         
         # Test basic SSH connection
-        if ssh -i /tmp/deploy_key -o ConnectTimeout=10 -o StrictHostKeyChecking=no root@${{ secrets.DROPLET_IP }} "echo 'SSH connection successful'" 2>/dev/null; then
+        if ssh -i /tmp/deploy_key -o ConnectTimeout=10 -o StrictHostKeyChecking=no root@${{ secrets.TASKFLOW_PROD_DROPLET_IP }} "echo 'SSH connection successful'" 2>/dev/null; then
           echo "✅ Step 5 SUCCESS: SSH connection established"
         else
           echo "❌ Step 5 FAILED: SSH connection failed"
           echo "Testing with verbose output:"
-          ssh -i /tmp/deploy_key -o ConnectTimeout=10 -o StrictHostKeyChecking=no -v root@${{ secrets.DROPLET_IP }} "echo 'test'" 2>&1 | head -10
+          ssh -i /tmp/deploy_key -o ConnectTimeout=10 -o StrictHostKeyChecking=no -v root@${{ secrets.TASKFLOW_PROD_DROPLET_IP }} "echo 'test'" 2>&1 | head -10
           exit 1
         fi
 
@@ -221,7 +221,7 @@ jobs:
         chmod 600 /tmp/deploy_key
         
         # Execute deployment commands via SSH
-        if ssh -i /tmp/deploy_key -o StrictHostKeyChecking=no root@${{ secrets.DROPLET_IP }} "
+        if ssh -i /tmp/deploy_key -o StrictHostKeyChecking=no root@${{ secrets.TASKFLOW_PROD_DROPLET_IP }} "
           echo '🔑 Starting SSH deployment...'
           cd /var/www/taskflow-app || exit 1
           git pull origin main || exit 1
@@ -283,10 +283,10 @@ jobs:
             "sha": "${{ github.sha }}",
             "pusher": "${{ github.actor }}"
           }' \
-          "http://${{ secrets.DROPLET_IP }}:9000/hooks/deploy-taskflow"; then
+          "http://${{ secrets.TASKFLOW_PROD_DROPLET_IP }}:9000/hooks/deploy-taskflow"; then
           echo "webhook_success=true" >> $GITHUB_OUTPUT
           echo "✅ Enhanced webhook backup deployment successful!"
-        elif curl -f "http://${{ secrets.DROPLET_IP }}:3000/deploy?token=taskflow-deploy-2025"; then
+        elif curl -f "http://${{ secrets.TASKFLOW_PROD_DROPLET_IP }}:3000/deploy?token=taskflow-deploy-2025"; then
           echo "webhook_success=true" >> $GITHUB_OUTPUT
           echo "✅ Simple webhook backup deployment successful!"
         else
@@ -301,9 +301,9 @@ jobs:
         echo "🏥 Performing final deployment verification..."
         sleep 10
         
-        if curl -f "http://${{ secrets.DROPLET_IP }}/health"; then
+        if curl -f "http://${{ secrets.TASKFLOW_PROD_DROPLET_IP }}/health"; then
           echo "✅ Deployment verification successful!"
-          echo "🌍 Application is live at: http://${{ secrets.DROPLET_IP }}"
+          echo "🌍 Application is live at: http://${{ secrets.TASKFLOW_PROD_DROPLET_IP }}"
         else
           echo "❌ Deployment verification failed!"
           exit 1
@@ -323,8 +323,8 @@ jobs:
         
         if [ "${{ job.status }}" == "success" ]; then
           echo "🎉 DEPLOYMENT SUCCESSFUL!"
-          echo "🔗 Live URL: http://${{ secrets.DROPLET_IP }}"
-          echo "🐳 Portainer: https://${{ secrets.DROPLET_IP }}:9443"
+          echo "🔗 Live URL: http://${{ secrets.TASKFLOW_PROD_DROPLET_IP }}"
+          echo "🐳 Portainer: https://${{ secrets.TASKFLOW_PROD_DROPLET_IP }}:9443"
           echo "🔐 SSH key sourced from Vault for backup deployment"
         else
           echo "❌ DEPLOYMENT FAILED!"
