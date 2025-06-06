@@ -94,37 +94,9 @@ jobs:
     - name: Checkout code
       uses: actions/checkout@v4
       
-    # PRIMARY METHOD: Webhook Deployment
-    - name: 🚀 Primary - Webhook Deployment
-      id: webhook_deploy
-      run: |
-        echo "🚀 Attempting webhook deployment..."
-        
-        # Try enhanced webhook first
-        if curl -X POST \
-          -H "Content-Type: application/json" \
-          -H "User-Agent: GitHub-Actions" \
-          -d '{
-            "repository": "${{ github.repository }}", 
-            "ref": "${{ github.ref }}",
-            "sha": "${{ github.sha }}",
-            "pusher": "${{ github.actor }}"
-          }' \
-          "http://${{ secrets.DROPLET_IP }}:9000/hooks/deploy-taskflow"; then
-          echo "webhook_success=true" >> $GITHUB_OUTPUT
-          echo "✅ Enhanced webhook deployment successful!"
-        elif curl -f "http://${{ secrets.DROPLET_IP }}:3000/deploy?token=taskflow-deploy-2025"; then
-          echo "webhook_success=true" >> $GITHUB_OUTPUT
-          echo "✅ Simple webhook deployment successful!"
-        else
-          echo "webhook_success=false" >> $GITHUB_OUTPUT
-          echo "❌ Webhook deployment failed, will try SSH backup..."
-        fi
-      continue-on-error: true
-
-    # Get SSH Key from HCP Vault Secrets for Backup Method
+    # PRIMARY METHOD: SSH Deployment with Vault
     - name: 🔐 Get SSH Key from HCP Vault Secrets
-      if: steps.webhook_deploy.outputs.webhook_success != 'true'
+      id: ssh_deploy_prep
       run: |
         echo "🔐 Authenticating with HCP Vault Secrets..."
         
@@ -173,10 +145,11 @@ jobs:
         echo -e "$FORMATTED_SSH_KEY" >> $GITHUB_ENV
         echo "EOF" >> $GITHUB_ENV
 
-    # BACKUP METHOD: SSH Deployment with Vault
-    - name: 🔑 Backup - SSH Deployment (Vault-Powered)
-      if: steps.webhook_deploy.outputs.webhook_success != 'true'
+    # PRIMARY METHOD: SSH Deployment (Vault-Powered)
+    - name: 🔑 Primary - SSH Deployment (Vault-Powered)
+      id: ssh_deploy
       uses: appleboy/ssh-action@v1.0.3
+      continue-on-error: true
       with:
         host: ${{ secrets.DROPLET_IP }}
         username: root
@@ -213,7 +186,38 @@ jobs:
             exit 1
           fi
           
-          echo "🎉 Vault-powered SSH backup deployment completed successfully!"
+          echo "🎉 Vault-powered SSH primary deployment completed successfully!"
+          echo "ssh_success=true" >> $GITHUB_OUTPUT
+
+    # BACKUP METHOD: Webhook Deployment (if SSH fails)
+    - name: 🚀 Backup - Webhook Deployment
+      if: steps.ssh_deploy.outcome != 'success'
+      id: webhook_deploy
+      run: |
+        echo "🚀 SSH failed, attempting webhook backup deployment..."
+        
+        # Try enhanced webhook first
+        if curl -X POST \
+          -H "Content-Type: application/json" \
+          -H "User-Agent: GitHub-Actions" \
+          -d '{
+            "repository": "${{ github.repository }}", 
+            "ref": "${{ github.ref }}",
+            "sha": "${{ github.sha }}",
+            "pusher": "${{ github.actor }}"
+          }' \
+          "http://${{ secrets.DROPLET_IP }}:9000/hooks/deploy-taskflow"; then
+          echo "webhook_success=true" >> $GITHUB_OUTPUT
+          echo "✅ Enhanced webhook backup deployment successful!"
+        elif curl -f "http://${{ secrets.DROPLET_IP }}:3000/deploy?token=taskflow-deploy-2025"; then
+          echo "webhook_success=true" >> $GITHUB_OUTPUT
+          echo "✅ Simple webhook backup deployment successful!"
+        else
+          echo "webhook_success=false" >> $GITHUB_OUTPUT
+          echo "❌ Both SSH and webhook deployments failed!"
+          exit 1
+        fi
+      continue-on-error: false
 
     # Verify Deployment Success
     - name: 🏥 Verify Deployment
@@ -237,7 +241,9 @@ jobs:
         echo "Repository: ${{ github.repository }}"
         echo "Commit SHA: ${{ github.sha }}"
         echo "Pushed by: ${{ github.actor }}"
+        echo "SSH Success: ${{ steps.ssh_deploy.outcome }}"
         echo "Webhook Success: ${{ steps.webhook_deploy.outputs.webhook_success }}"
+        echo "Deployment Method: $([ '${{ steps.ssh_deploy.outcome }}' = 'success' ] && echo 'SSH Primary' || echo 'Webhook Backup')"
         
         if [ "${{ job.status }}" == "success" ]; then
           echo "🎉 DEPLOYMENT SUCCESSFUL!"
