@@ -122,17 +122,42 @@ jobs:
         fi
       continue-on-error: true
 
-    # Get SSH Key from Vault for Backup Method
-    - name: 🔐 Get SSH Key from Vault
+    # Get SSH Key from HCP Vault Secrets for Backup Method
+    - name: 🔐 Get SSH Key from HCP Vault Secrets
       if: steps.webhook_deploy.outputs.webhook_success != 'true'
-      uses: hashicorp/vault-action@v2
-      with:
-        url: ${{ secrets.VAULT_ADDR }}
-        method: jwt
-        clientId: ${{ secrets.VAULT_CLIENT_ID }}
-        clientSecret: ${{ secrets.VAULT_CLIENT_SECRET }}
-        secrets: |
-          projects/taskflow/prod/ssh_key value | SSH_PRIVATE_KEY
+      run: |
+        echo "🔐 Authenticating with HCP Vault Secrets..."
+        
+        # Get access token using service principal
+        ACCESS_TOKEN=$(curl -s -X POST "https://auth.idp.hashicorp.com/oauth2/token" \
+          -H "Content-Type: application/x-www-form-urlencoded" \
+          -d "grant_type=client_credentials&client_id=${{ secrets.VAULT_CLIENT_ID }}&client_secret=${{ secrets.VAULT_CLIENT_SECRET }}&audience=https://api.hashicorp.cloud&scope=https://api.hashicorp.cloud" \
+          | jq -r '.access_token')
+        
+        if [ "$ACCESS_TOKEN" = "null" ] || [ -z "$ACCESS_TOKEN" ]; then
+          echo "❌ Failed to get access token from HCP"
+          exit 1
+        fi
+        
+        echo "✅ Successfully authenticated with HCP"
+        
+        # Get SSH key from HCP Vault Secrets
+        echo "🔑 Retrieving SSH key from HCP Vault Secrets..."
+        SSH_KEY=$(curl -s -H "Authorization: Bearer $ACCESS_TOKEN" \
+          "https://api.cloud.hashicorp.com/secrets/2023-06-13/organizations/b9aa686e-3fc3-4436-8cae-1186bfa28a7f/projects/6edfe380-4a09-4778-861b-76572e60f123/apps/taskflow-prod/secrets/ssh_key" \
+          | jq -r '.secret.version.value')
+        
+        if [ "$SSH_KEY" = "null" ] || [ -z "$SSH_KEY" ]; then
+          echo "❌ Failed to retrieve SSH key from HCP Vault Secrets"
+          exit 1
+        fi
+        
+        echo "✅ Successfully retrieved SSH key from HCP Vault Secrets"
+        
+        # Export SSH key for next step
+        echo "SSH_PRIVATE_KEY<<EOF" >> $GITHUB_ENV
+        echo "$SSH_KEY" >> $GITHUB_ENV
+        echo "EOF" >> $GITHUB_ENV
 
     # BACKUP METHOD: SSH Deployment with Vault
     - name: 🔑 Backup - SSH Deployment (Vault-Powered)
