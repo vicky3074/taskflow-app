@@ -173,9 +173,15 @@ jobs:
         
         echo "✅ Successfully retrieved SSH key from HCP Vault Secrets"
         
-        # Export SSH key for next step
+        # Fix SSH key formatting (convert single line back to proper format)
+        echo "🔧 Reformatting SSH key with proper line breaks..."
+        FORMATTED_SSH_KEY=$(echo "$SSH_KEY" | sed 's/-----BEGIN OPENSSH PRIVATE KEY----- /-----BEGIN OPENSSH PRIVATE KEY-----\n/' | sed 's/ -----END OPENSSH PRIVATE KEY-----/\n-----END OPENSSH PRIVATE KEY-----/' | sed 's/ /\n/g')
+        
+        echo "SSH key after formatting: ${FORMATTED_SSH_KEY:0:100}..."
+        
+        # Export properly formatted SSH key for next step
         echo "SSH_PRIVATE_KEY<<EOF" >> $GITHUB_ENV
-        echo "$SSH_KEY" >> $GITHUB_ENV
+        echo -e "$FORMATTED_SSH_KEY" >> $GITHUB_ENV
         echo "EOF" >> $GITHUB_ENV
 
     # BACKUP METHOD: SSH Deployment with Vault
