@@ -141,14 +141,31 @@ jobs:
         
         echo "✅ Successfully authenticated with HCP"
         
-        # Get SSH key from HCP Vault Secrets
+        # Debug: List all secrets in the app first
+        echo "🔍 Listing all secrets in taskflow-prod app..."
+        ALL_SECRETS=$(curl -s -H "Authorization: Bearer $ACCESS_TOKEN" \
+          "https://api.cloud.hashicorp.com/secrets/2023-06-13/organizations/b9aa686e-3fc3-4436-8cae-1186bfa28a7f/projects/6edfe380-4a09-4778-861b-76572e60f123/apps/taskflow-prod/secrets")
+        echo "Available secrets: $ALL_SECRETS"
+        
+        # Try to get SSH key from HCP Vault Secrets (try different possible names)
         echo "🔑 Retrieving SSH key from HCP Vault Secrets..."
+        
+        # Try ssh_key first
         SSH_KEY=$(curl -s -H "Authorization: Bearer $ACCESS_TOKEN" \
           "https://api.cloud.hashicorp.com/secrets/2023-06-13/organizations/b9aa686e-3fc3-4436-8cae-1186bfa28a7f/projects/6edfe380-4a09-4778-861b-76572e60f123/apps/taskflow-prod/secrets/ssh_key" \
-          | jq -r '.secret.version.value')
+          | jq -r '.secret.version.value // empty')
         
-        if [ "$SSH_KEY" = "null" ] || [ -z "$SSH_KEY" ]; then
-          echo "❌ Failed to retrieve SSH key from HCP Vault Secrets"
+        # If not found, try taskflow_prod_ssh_key
+        if [ -z "$SSH_KEY" ] || [ "$SSH_KEY" = "null" ]; then
+          echo "🔄 Trying alternative name: taskflow_prod_ssh_key..."
+          SSH_KEY=$(curl -s -H "Authorization: Bearer $ACCESS_TOKEN" \
+            "https://api.cloud.hashicorp.com/secrets/2023-06-13/organizations/b9aa686e-3fc3-4436-8cae-1186bfa28a7f/projects/6edfe380-4a09-4778-861b-76572e60f123/apps/taskflow-prod/secrets/taskflow_prod_ssh_key" \
+            | jq -r '.secret.version.value // empty')
+        fi
+        
+        if [ -z "$SSH_KEY" ] || [ "$SSH_KEY" = "null" ]; then
+          echo "❌ Failed to retrieve SSH key from HCP Vault Secrets with any name"
+          echo "📋 Check available secrets above for correct name"
           exit 1
         fi
         
