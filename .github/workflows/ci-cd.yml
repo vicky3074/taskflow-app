@@ -123,15 +123,7 @@ jobs:
         
         echo "🐍 Using Python for robust JSON parsing..."
         echo "$SSH_RESPONSE" > /tmp/ssh_response.json
-        SSH_KEY=$(python3 -c "
-import json
-with open('/tmp/ssh_response.json') as f:
-    data = json.load(f)
-ssh_key = data['secret']['static_version']['value']
-# Convert \\n escape sequences to actual newlines
-ssh_key = ssh_key.replace('\\\\n', '\n')
-print(ssh_key)
-        ")
+        SSH_KEY=$(python3 -c "import json; f=open('/tmp/ssh_response.json'); data=json.load(f); f.close(); ssh_key=data['secret']['static_version']['value'].replace('\\\\n', '\n'); print(ssh_key)")
         
         if [ $? -eq 0 ] && [ -n "$SSH_KEY" ]; then
           echo "✅ SSH key extracted successfully using Python"
