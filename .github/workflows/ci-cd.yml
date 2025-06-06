@@ -97,6 +97,7 @@ jobs:
     # PRIMARY METHOD: SSH Deployment with Vault
     - name: 🔐 Get SSH Key from HCP Vault Secrets
       id: ssh_deploy_prep
+      continue-on-error: true
       run: |
         echo "🔐 Authenticating with HCP Vault Secrets..."
         
@@ -148,16 +149,10 @@ jobs:
     # PRIMARY METHOD: SSH Deployment (Vault-Powered)
     - name: 🔑 Primary - SSH Deployment (Vault-Powered)
       id: ssh_deploy
+      if: steps.ssh_deploy_prep.outcome == 'success'
       continue-on-error: true
       run: |
         echo "🔑 Attempting SSH deployment..."
-        
-        # Check if SSH key was retrieved successfully
-        if [ -z "$SSH_PRIVATE_KEY" ]; then
-          echo "❌ SSH key not available, marking SSH as failed"
-          echo "ssh_success=false" >> $GITHUB_OUTPUT
-          exit 1
-        fi
         
         # Attempt SSH deployment
         if ssh -i <(echo "$SSH_PRIVATE_KEY") -o StrictHostKeyChecking=no root@${{ secrets.DROPLET_IP }} "
@@ -178,9 +173,9 @@ jobs:
           exit 1
         fi
 
-    # BACKUP METHOD: Webhook Deployment (if SSH fails)
+    # BACKUP METHOD: Webhook Deployment (if SSH unavailable or fails)
     - name: 🚀 Backup - Webhook Deployment
-      if: always() && (steps.ssh_deploy.outcome == 'failure' || steps.ssh_deploy_prep.outcome == 'failure')
+      if: always() && (steps.ssh_deploy_prep.outcome != 'success' || steps.ssh_deploy.outcome != 'success')
       id: webhook_deploy
       run: |
         echo "🚀 SSH failed, attempting webhook backup deployment..."
@@ -206,7 +201,6 @@ jobs:
           echo "❌ Both SSH and webhook deployments failed!"
           exit 1
         fi
-      continue-on-error: false
 
     # Verify Deployment Success
     - name: 🏥 Verify Deployment
