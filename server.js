@@ -155,7 +155,7 @@ app.get('/', (req, res) => {
         <div class="container">
             <div class="header">
                 <h1>🚀 TaskFlow <span style="font-size: 0.6em; background: #28a745; color: white; padding: 2px 8px; border-radius: 12px;">🔐 Vault</span></h1>
-                <p>Modern Task Management with Docker & CI/CD - Now with GitHub Integration!</p>
+                <p>Modern Task Management with Docker & CI/CD - SSH Deployment from Vault Working!</p>
                 <div>
                     <span class="badge">Docker</span>
                     <span class="badge">Node.js</span>
@@ -301,7 +301,7 @@ app.get('/health', (req, res) => {
     timestamp: new Date().toISOString(),
     uptime: process.uptime(),
     environment: process.env.NODE_ENV || 'development',
-    version: '1.0.17-ssh-vault-success-test',
+    version: '1.0.18-prod-secrets-verified',
     memory: process.memoryUsage(),
     tasks: {
       total: tasks.length,
