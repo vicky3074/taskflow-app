@@ -94,14 +94,13 @@ jobs:
     - name: Checkout code
       uses: actions/checkout@v4
       
-    # PRIMARY METHOD: SSH Deployment with Vault
-    - name: 🔐 Get SSH Key from HCP Vault Secrets
-      id: ssh_deploy_prep
+    # STEP 1: Authenticate with HCP Vault Secrets
+    - name: 🔐 Step 1 - Authenticate with HCP Vault Secrets
+      id: vault_auth
       continue-on-error: true
       run: |
-        echo "🔐 Authenticating with HCP Vault Secrets..."
+        echo "🔐 Step 1: Authenticating with HCP Vault Secrets API..."
         
-        # Get access token using service principal (HCP Vault Secrets API)
         TOKEN_RESPONSE=$(curl -s -X POST "https://auth.idp.hashicorp.com/oauth2/token" \
           -H "Content-Type: application/x-www-form-urlencoded" \
           -d "grant_type=client_credentials&client_id=${{ secrets.VAULT_CLIENT_ID }}&client_secret=${{ secrets.VAULT_CLIENT_SECRET }}&audience=https://api.hashicorp.cloud&scope=https://api.hashicorp.cloud")
@@ -109,49 +108,120 @@ jobs:
         ACCESS_TOKEN=$(echo "$TOKEN_RESPONSE" | jq -r '.access_token // empty')
         
         if [ -z "$ACCESS_TOKEN" ] || [ "$ACCESS_TOKEN" = "null" ]; then
-          echo "❌ Failed to get access token from HCP Vault Secrets"
+          echo "❌ Step 1 FAILED: Authentication failed"
           echo "Response: $TOKEN_RESPONSE"
           exit 1
         fi
         
-        echo "✅ Successfully authenticated with HCP Vault Secrets"
+        echo "✅ Step 1 SUCCESS: Authentication completed"
+        echo "Token length: ${#ACCESS_TOKEN}"
+        echo "vault_token=$ACCESS_TOKEN" >> $GITHUB_OUTPUT
+
+    # STEP 2: Retrieve SSH Key from Vault
+    - name: 🔑 Step 2 - Retrieve SSH Key from Vault
+      id: vault_retrieve
+      if: steps.vault_auth.outcome == 'success'
+      continue-on-error: true
+      run: |
+        echo "🔑 Step 2: Retrieving SSH key from HCP Vault Secrets..."
         
-        # Retrieve SSH key using correct HCP Vault Secrets API endpoint
-        echo "🔑 Retrieving SSH key from HCP Vault Secrets..."
-        SSH_RESPONSE=$(curl -s -H "Authorization: Bearer $ACCESS_TOKEN" \
+        SSH_RESPONSE=$(curl -s -H "Authorization: Bearer ${{ steps.vault_auth.outputs.vault_token }}" \
           "https://api.cloud.hashicorp.com/secrets/2023-11-28/organizations/b9aa686e-3fc3-4436-8cae-1186bfa28a7f/projects/6edfe380-4a09-4778-861b-76572e60f123/apps/taskflow-prod/secrets/ssh_key:open")
         
-        echo "🐍 Using Python for robust JSON parsing..."
-        echo "$SSH_RESPONSE" > /tmp/ssh_response.json
-        SSH_KEY=$(python3 -c "import json; f=open('/tmp/ssh_response.json'); data=json.load(f); f.close(); ssh_key=data['secret']['static_version']['value'].replace('\\\\n', '\n'); print(ssh_key)")
+        echo "Response length: $(echo "$SSH_RESPONSE" | wc -c) bytes"
         
-        if [ $? -eq 0 ] && [ -n "$SSH_KEY" ]; then
-          echo "✅ SSH key extracted successfully using Python"
-          echo "SSH_PRIVATE_KEY<<EOF" >> $GITHUB_ENV
-          echo "$SSH_KEY" >> $GITHUB_ENV
-          echo "EOF" >> $GITHUB_ENV
-        else
-          echo "❌ Failed to extract SSH key using Python"
+        if [ $(echo "$SSH_RESPONSE" | wc -c) -lt 100 ]; then
+          echo "❌ Step 2 FAILED: Response too short"
+          echo "Response: $SSH_RESPONSE"
           exit 1
         fi
         
-        if [ $? -eq 0 ]; then
-          echo "✅ Successfully retrieved and parsed SSH key from HCP Vault Secrets"
+        echo "✅ Step 2 SUCCESS: SSH key response received"
+        echo "$SSH_RESPONSE" > /tmp/ssh_response.json
+
+    # STEP 3: Parse SSH Key with Python
+    - name: 🐍 Step 3 - Parse SSH Key with Python
+      id: ssh_parse
+      if: steps.vault_retrieve.outcome == 'success'
+      continue-on-error: true
+      run: |
+        echo "🐍 Step 3: Parsing SSH key with Python..."
+        
+        SSH_KEY=$(python3 -c "import json; f=open('/tmp/ssh_response.json'); data=json.load(f); f.close(); ssh_key=data['secret']['static_version']['value'].replace('\\\\n', '\n'); print(ssh_key)")
+        
+        if [ $? -ne 0 ] || [ -z "$SSH_KEY" ]; then
+          echo "❌ Step 3 FAILED: Python parsing failed"
+          echo "JSON content preview:"
+          head -c 200 /tmp/ssh_response.json
+          exit 1
+        fi
+        
+        echo "✅ Step 3 SUCCESS: SSH key parsed"
+        echo "SSH key starts with: $(echo "$SSH_KEY" | head -1)"
+        echo "SSH key line count: $(echo "$SSH_KEY" | wc -l)"
+        
+        # Save to GitHub environment
+        echo "SSH_PRIVATE_KEY<<EOF" >> $GITHUB_ENV
+        echo "$SSH_KEY" >> $GITHUB_ENV
+        echo "EOF" >> $GITHUB_ENV
+
+    # STEP 4: Validate SSH Key Format
+    - name: 🔍 Step 4 - Validate SSH Key Format
+      id: ssh_validate
+      if: steps.ssh_parse.outcome == 'success'
+      continue-on-error: true
+      run: |
+        echo "🔍 Step 4: Validating SSH key format..."
+        
+        # Save SSH key to temporary file
+        echo "$SSH_PRIVATE_KEY" > /tmp/test_ssh_key
+        chmod 600 /tmp/test_ssh_key
+        
+        # Validate SSH key format
+        if ssh-keygen -l -f /tmp/test_ssh_key >/dev/null 2>&1; then
+          echo "✅ Step 4 SUCCESS: SSH key format is valid"
+          ssh-keygen -l -f /tmp/test_ssh_key
         else
-          echo "❌ Failed to retrieve SSH key from HCP Vault Secrets"
+          echo "❌ Step 4 FAILED: Invalid SSH key format"
+          echo "Key preview:"
+          head -3 /tmp/test_ssh_key
           exit 1
         fi
 
-    # PRIMARY METHOD: SSH Deployment (Vault-Powered)
-    - name: 🔑 Primary - SSH Deployment (Vault-Powered)
-      id: ssh_deploy
-      if: steps.ssh_deploy_prep.outcome == 'success'
+    # STEP 5: Test SSH Connection
+    - name: 🔗 Step 5 - Test SSH Connection
+      id: ssh_connect
+      if: steps.ssh_validate.outcome == 'success'
       continue-on-error: true
       run: |
-        echo "🔑 Attempting SSH deployment..."
+        echo "🔗 Step 5: Testing SSH connection..."
         
-        # Attempt SSH deployment
-        if ssh -i <(echo "$SSH_PRIVATE_KEY") -o StrictHostKeyChecking=no root@${{ secrets.DROPLET_IP }} "
+        echo "$SSH_PRIVATE_KEY" > /tmp/deploy_key
+        chmod 600 /tmp/deploy_key
+        
+        # Test basic SSH connection
+        if ssh -i /tmp/deploy_key -o ConnectTimeout=10 -o StrictHostKeyChecking=no root@${{ secrets.DROPLET_IP }} "echo 'SSH connection successful'" 2>/dev/null; then
+          echo "✅ Step 5 SUCCESS: SSH connection established"
+        else
+          echo "❌ Step 5 FAILED: SSH connection failed"
+          echo "Testing with verbose output:"
+          ssh -i /tmp/deploy_key -o ConnectTimeout=10 -o StrictHostKeyChecking=no -v root@${{ secrets.DROPLET_IP }} "echo 'test'" 2>&1 | head -10
+          exit 1
+        fi
+
+    # STEP 6: Full SSH Deployment
+    - name: 🚀 Step 6 - Full SSH Deployment
+      id: ssh_deploy
+      if: steps.ssh_connect.outcome == 'success'
+      continue-on-error: true
+      run: |
+        echo "🚀 Step 6: Executing full SSH deployment..."
+        
+        echo "$SSH_PRIVATE_KEY" > /tmp/deploy_key
+        chmod 600 /tmp/deploy_key
+        
+        # Execute deployment commands via SSH
+        if ssh -i /tmp/deploy_key -o StrictHostKeyChecking=no root@${{ secrets.DROPLET_IP }} "
           echo '🔑 Starting SSH deployment...'
           cd /var/www/taskflow-app || exit 1
           git pull origin main || exit 1
@@ -162,16 +232,43 @@ jobs:
           echo '✅ SSH deployment successful!'
         "; then
           echo "ssh_success=true" >> $GITHUB_OUTPUT
-          echo "✅ SSH primary deployment successful!"
+          echo "✅ Step 6 SUCCESS: SSH deployment completed!"
         else
           echo "ssh_success=false" >> $GITHUB_OUTPUT
-          echo "❌ SSH deployment failed, will try webhook backup..."
+          echo "❌ Step 6 FAILED: SSH deployment failed"
           exit 1
+        fi
+
+    # STEP 7: Deployment Status Summary
+    - name: 📊 Step 7 - Deployment Steps Summary
+      if: always()
+      run: |
+        echo "📊 SSH Deployment Steps Summary:"
+        echo "================================="
+        echo "Step 1 - Authentication: ${{ steps.vault_auth.outcome }}"
+        echo "Step 2 - SSH Key Retrieval: ${{ steps.vault_retrieve.outcome }}"
+        echo "Step 3 - Python Parsing: ${{ steps.ssh_parse.outcome }}"
+        echo "Step 4 - SSH Key Validation: ${{ steps.ssh_validate.outcome }}"
+        echo "Step 5 - SSH Connection Test: ${{ steps.ssh_connect.outcome }}"
+        echo "Step 6 - SSH Deployment: ${{ steps.ssh_deploy.outcome }}"
+        echo ""
+        if [ "${{ steps.ssh_deploy.outcome }}" = "success" ]; then
+          echo "🎉 SSH DEPLOYMENT SUCCESSFUL!"
+          echo "All steps completed successfully"
+        else
+          echo "⚠️ SSH deployment failed at step:"
+          [ "${{ steps.vault_auth.outcome }}" != "success" ] && echo "  - Step 1: Authentication"
+          [ "${{ steps.vault_retrieve.outcome }}" != "success" ] && echo "  - Step 2: SSH Key Retrieval"
+          [ "${{ steps.ssh_parse.outcome }}" != "success" ] && echo "  - Step 3: Python Parsing"
+          [ "${{ steps.ssh_validate.outcome }}" != "success" ] && echo "  - Step 4: SSH Key Validation"
+          [ "${{ steps.ssh_connect.outcome }}" != "success" ] && echo "  - Step 5: SSH Connection"
+          [ "${{ steps.ssh_deploy.outcome }}" != "success" ] && echo "  - Step 6: SSH Deployment"
+          echo "Falling back to webhook deployment..."
         fi
 
     # BACKUP METHOD: Webhook Deployment (if SSH unavailable or fails)
     - name: 🚀 Backup - Webhook Deployment
-      if: always() && (steps.ssh_deploy_prep.outcome != 'success' || steps.ssh_deploy.outcome != 'success')
+      if: always() && steps.ssh_deploy.outcome != 'success'
       id: webhook_deploy
       run: |
         echo "🚀 SSH failed, attempting webhook backup deployment..."
