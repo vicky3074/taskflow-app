@@ -301,7 +301,7 @@ app.get('/health', (req, res) => {
     timestamp: new Date().toISOString(),
     uptime: process.uptime(),
     environment: process.env.NODE_ENV || 'development',
-    version: '1.0.7-ssh-backup-test',
+    version: '1.0.8-clean-vault-api-test',
     memory: process.memoryUsage(),
     tasks: {
       total: tasks.length,

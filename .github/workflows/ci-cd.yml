@@ -141,28 +141,16 @@ jobs:
         
         echo "✅ Successfully authenticated with HCP"
         
-        # Debug: List all secrets in the app first
-        echo "🔍 Listing all secrets in taskflow-prod app..."
-        ALL_SECRETS=$(curl -s -H "Authorization: Bearer $ACCESS_TOKEN" \
-          "https://api.cloud.hashicorp.com/secrets/2023-06-13/organizations/b9aa686e-3fc3-4436-8cae-1186bfa28a7f/projects/6edfe380-4a09-4778-861b-76572e60f123/apps/taskflow-prod/secrets")
-        echo "Available secrets: $ALL_SECRETS"
-        
-        # Try to get SSH key from HCP Vault Secrets (try different possible names)
+        # Retrieve SSH key using correct HCP Vault Secrets API format
         echo "🔑 Retrieving SSH key from HCP Vault Secrets..."
-        
-        # Test with a known working secret first (db_password)
-        echo "🧪 Testing API with known secret (db_password)..."
-        DB_TEST=$(curl -s -H "Authorization: Bearer $ACCESS_TOKEN" \
-          "https://api.cloud.hashicorp.com/secrets/2023-06-13/organizations/b9aa686e-3fc3-4436-8cae-1186bfa28a7f/projects/6edfe380-4a09-4778-861b-76572e60f123/apps/taskflow-prod/secrets/db_password")
-        echo "DB test response: $DB_TEST"
-        
-        # Try ssh_key with full response debugging
-        echo "🔍 Getting full ssh_key response..."
-        SSH_RESPONSE=$(curl -s -H "Authorization: Bearer $ACCESS_TOKEN" \
-          "https://api.cloud.hashicorp.com/secrets/2023-06-13/organizations/b9aa686e-3fc3-4436-8cae-1186bfa28a7f/projects/6edfe380-4a09-4778-861b-76572e60f123/apps/taskflow-prod/secrets/ssh_key")
+        SSH_RESPONSE=$(curl -s -X POST \
+          -H "Authorization: Bearer $ACCESS_TOKEN" \
+          -H "Content-Type: application/json" \
+          -d '{"names": ["ssh_key"]}' \
+          "https://api.cloud.hashicorp.com/secrets/2023-11-28/organizations/b9aa686e-3fc3-4436-8cae-1186bfa28a7f/projects/6edfe380-4a09-4778-861b-76572e60f123/apps/taskflow-prod/secrets:open")
         echo "SSH key response: $SSH_RESPONSE"
         
-        SSH_KEY=$(echo "$SSH_RESPONSE" | jq -r '.secret.version.value // empty')
+        SSH_KEY=$(echo "$SSH_RESPONSE" | jq -r '.secrets[0].version.value // empty')
         echo "Extracted SSH key: ${SSH_KEY:0:50}..." # Only show first 50 chars
         
         if [ -z "$SSH_KEY" ] || [ "$SSH_KEY" = "null" ]; then
