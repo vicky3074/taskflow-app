@@ -122,7 +122,7 @@ jobs:
           "https://api.cloud.hashicorp.com/secrets/2023-11-28/organizations/b9aa686e-3fc3-4436-8cae-1186bfa28a7f/projects/6edfe380-4a09-4778-861b-76572e60f123/apps/taskflow-prod/secrets:open")
         echo "SSH key response: $SSH_RESPONSE"
         
-        SSH_KEY=$(echo "$SSH_RESPONSE" | jq -r '.secrets[0].version.value // empty')
+        SSH_KEY=$(echo "$SSH_RESPONSE" | jq -r '.static_version.value // empty')
         echo "Extracted SSH key: ${SSH_KEY:0:50}..." # Only show first 50 chars
         
         if [ -z "$SSH_KEY" ] || [ "$SSH_KEY" = "null" ]; then
@@ -148,50 +148,39 @@ jobs:
     # PRIMARY METHOD: SSH Deployment (Vault-Powered)
     - name: 🔑 Primary - SSH Deployment (Vault-Powered)
       id: ssh_deploy
-      uses: appleboy/ssh-action@v1.0.3
       continue-on-error: true
-      with:
-        host: ${{ secrets.DROPLET_IP }}
-        username: root
-        key: ${{ env.SSH_PRIVATE_KEY }}
-        timeout: 300s
-        script: |
-          echo "🔑 Starting Vault-powered SSH backup deployment..."
-          
-          # Navigate to project directory
+      run: |
+        echo "🔑 Attempting SSH deployment..."
+        
+        # Check if SSH key was retrieved successfully
+        if [ -z "$SSH_PRIVATE_KEY" ]; then
+          echo "❌ SSH key not available, marking SSH as failed"
+          echo "ssh_success=false" >> $GITHUB_OUTPUT
+          exit 1
+        fi
+        
+        # Attempt SSH deployment
+        if ssh -i <(echo "$SSH_PRIVATE_KEY") -o StrictHostKeyChecking=no root@${{ secrets.DROPLET_IP }} "
+          echo '🔑 Starting SSH deployment...'
           cd /var/www/taskflow-app || exit 1
-          
-          # Pull latest code
-          echo "📥 Pulling latest code..."
           git pull origin main || exit 1
-          
-          # Sync Vault secrets
-          echo "🔐 Syncing Vault secrets..."
-          if [ -f "./vault-secrets.sh" ]; then
-            ./vault-secrets.sh || echo "Warning: Vault sync failed, using existing secrets"
-          fi
-          
-          # Rebuild and deploy
-          echo "🐳 Building and deploying containers..."
           docker compose down
           docker compose up -d --build
-          
-          # Health check
-          echo "🏥 Performing health check..."
           sleep 30
-          if curl -f http://localhost/health; then
-            echo "✅ SSH deployment successful!"
-          else
-            echo "❌ SSH deployment health check failed!"
-            exit 1
-          fi
-          
-          echo "🎉 Vault-powered SSH primary deployment completed successfully!"
+          curl -f http://localhost/health || exit 1
+          echo '✅ SSH deployment successful!'
+        "; then
           echo "ssh_success=true" >> $GITHUB_OUTPUT
+          echo "✅ SSH primary deployment successful!"
+        else
+          echo "ssh_success=false" >> $GITHUB_OUTPUT
+          echo "❌ SSH deployment failed, will try webhook backup..."
+          exit 1
+        fi
 
     # BACKUP METHOD: Webhook Deployment (if SSH fails)
     - name: 🚀 Backup - Webhook Deployment
-      if: steps.ssh_deploy.outcome != 'success'
+      if: always() && (steps.ssh_deploy.outcome == 'failure' || steps.ssh_deploy_prep.outcome == 'failure')
       id: webhook_deploy
       run: |
         echo "🚀 SSH failed, attempting webhook backup deployment..."
