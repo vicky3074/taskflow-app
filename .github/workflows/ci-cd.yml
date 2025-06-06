@@ -150,18 +150,20 @@ jobs:
         # Try to get SSH key from HCP Vault Secrets (try different possible names)
         echo "🔑 Retrieving SSH key from HCP Vault Secrets..."
         
-        # Try ssh_key first
-        SSH_KEY=$(curl -s -H "Authorization: Bearer $ACCESS_TOKEN" \
-          "https://api.cloud.hashicorp.com/secrets/2023-06-13/organizations/b9aa686e-3fc3-4436-8cae-1186bfa28a7f/projects/6edfe380-4a09-4778-861b-76572e60f123/apps/taskflow-prod/secrets/ssh_key" \
-          | jq -r '.secret.version.value // empty')
+        # Test with a known working secret first (db_password)
+        echo "🧪 Testing API with known secret (db_password)..."
+        DB_TEST=$(curl -s -H "Authorization: Bearer $ACCESS_TOKEN" \
+          "https://api.cloud.hashicorp.com/secrets/2023-06-13/organizations/b9aa686e-3fc3-4436-8cae-1186bfa28a7f/projects/6edfe380-4a09-4778-861b-76572e60f123/apps/taskflow-prod/secrets/db_password")
+        echo "DB test response: $DB_TEST"
         
-        # If not found, try taskflow_prod_ssh_key
-        if [ -z "$SSH_KEY" ] || [ "$SSH_KEY" = "null" ]; then
-          echo "🔄 Trying alternative name: taskflow_prod_ssh_key..."
-          SSH_KEY=$(curl -s -H "Authorization: Bearer $ACCESS_TOKEN" \
-            "https://api.cloud.hashicorp.com/secrets/2023-06-13/organizations/b9aa686e-3fc3-4436-8cae-1186bfa28a7f/projects/6edfe380-4a09-4778-861b-76572e60f123/apps/taskflow-prod/secrets/taskflow_prod_ssh_key" \
-            | jq -r '.secret.version.value // empty')
-        fi
+        # Try ssh_key with full response debugging
+        echo "🔍 Getting full ssh_key response..."
+        SSH_RESPONSE=$(curl -s -H "Authorization: Bearer $ACCESS_TOKEN" \
+          "https://api.cloud.hashicorp.com/secrets/2023-06-13/organizations/b9aa686e-3fc3-4436-8cae-1186bfa28a7f/projects/6edfe380-4a09-4778-861b-76572e60f123/apps/taskflow-prod/secrets/ssh_key")
+        echo "SSH key response: $SSH_RESPONSE"
+        
+        SSH_KEY=$(echo "$SSH_RESPONSE" | jq -r '.secret.version.value // empty')
+        echo "Extracted SSH key: ${SSH_KEY:0:50}..." # Only show first 50 chars
         
         if [ -z "$SSH_KEY" ] || [ "$SSH_KEY" = "null" ]; then
           echo "❌ Failed to retrieve SSH key from HCP Vault Secrets with any name"
