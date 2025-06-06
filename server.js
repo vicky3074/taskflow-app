@@ -54,12 +54,12 @@ app.get('/', (req, res) => {
     <head>
         <meta charset="UTF-8">
         <meta name="viewport" content="width=device-width, initial-scale=1.0">
-        <title>TaskFlow - Task Management</title>
+        <title>TaskFlow - Task Management (Vault-Powered)</title>
         <style>
             * { margin: 0; padding: 0; box-sizing: border-box; }
             body { 
                 font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
-                background: linear-gradient(135deg, #ff6b9d 0%, #ff8fab 100%);
+                background: linear-gradient(135deg, #4facfe 0%, #00f2fe 100%);
                 min-height: 100vh;
                 padding: 20px;
             }
@@ -154,7 +154,7 @@ app.get('/', (req, res) => {
     <body>
         <div class="container">
             <div class="header">
-                <h1>🚀 TaskFlow</h1>
+                <h1>🚀 TaskFlow <span style="font-size: 0.6em; background: #28a745; color: white; padding: 2px 8px; border-radius: 12px;">🔐 Vault</span></h1>
                 <p>Modern Task Management with Docker & CI/CD - Now with GitHub Integration!</p>
                 <div>
                     <span class="badge">Docker</span>
